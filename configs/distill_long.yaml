@@ -1,0 +1,53 @@
+defaults: distill.yaml
+
+# On-policy distillation with a 19k student budget.
+#
+# The first attempt at 6144 tokens collapsed, and inspecting it showed why. The
+# distilled student writes coherent, correct reasoning in the teacher's <think>
+# style -- and then keeps going ("Method 1... Method 2... Method 3...") without ever
+# stopping. Re-evaluated at 19k it still truncates on 93% of samples at a mean
+# length of 18,405.
+#
+# The mechanism is a self-reinforcing trap specific to on-policy distillation under
+# a length cap:
+#
+#   student writes long -> its rollouts get truncated -> truncated samples contain
+#   no EOS token -> on-policy training only sees the student's own samples, so EOS
+#   never appears in the data -> no gradient toward terminating -> writes longer
+#
+# The teacher does terminate (18% truncation at 19k), but EOS is one token at the
+# end of a 10k-token sequence, so per-token KL gives it ~1/N of the weight while
+# "explore another method" is a high-probability continuation at every interior
+# position.
+#
+# Raising the budget alone is therefore not expected to fix it; this config exists
+# to test that, against distill_long_mix which adds termination pressure.
+
+rollout:
+  # 19000 generation + prompt headroom; the engine must be served at MAX_LEN 20480.
+  max_new_tokens: 19000
+  # 4 x 8 = 32 rollouts/step. Small, but distillation gets a signal on every token,
+  # so 32 x ~18k tokens is ~576k supervised tokens per step -- far denser than RL's
+  # one scalar per response.
+  prompts_per_step: 4
+  group_size: 8
+  gpu_memory_utilization: 0.24
+
+reward:
+  # Off, so the logged accuracy is not confounded by a length penalty. Nothing is
+  # optimized from the reward here unless teacher.reward_mix > 0.
+  overlong_max: 0
+
+algo:
+  minibatch_size: 8
+  # 1, not 4: activations scale with micro_batch x context, and 19456 tokens is
+  # three times the previous context. One sequence at a time keeps peak memory
+  # about where micro 4 x 6144 was.
+  micro_batch_size: 1
+
+eval:
+  max_new_tokens: 19000
+  avg_at_k: 4          # 19k-token generations are expensive; k=4 for the curve
+  every_steps: 10
+
+output_dir: runs/distill_long

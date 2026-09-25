@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtualenvs / package managers
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Test / type / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Training artifacts (local only)
+logs/
+runs/
+runs_archive/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+*.onnx
+wandb/
+outputs/
+checkpoints/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/

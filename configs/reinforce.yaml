@@ -1,0 +1,15 @@
+defaults: base.yaml
+
+algo:
+  name: reinforce
+  advantage: rloo
+  normalize_advantage_std: false
+  loss_normalization: token
+  ppo_epochs: 1          # on-policy only; see algos/reinforce.py
+  minibatch_size: 8
+  kl_coef: 0.0
+  entropy_coef: 0.0
+  mask_truncated: true
+  dynamic_sampling: false
+
+output_dir: runs/reinforce

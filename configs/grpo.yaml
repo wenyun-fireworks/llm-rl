@@ -1,0 +1,20 @@
+defaults: base.yaml
+
+# Dr.GRPO / DAPO flavour: no std normalization, token-level loss, clip-higher,
+# dynamic sampling. Set normalize_advantage_std=true and loss_normalization=sequence
+# to recover GRPO exactly as originally published.
+algo:
+  name: grpo
+  advantage: grpo
+  normalize_advantage_std: false
+  loss_normalization: token
+  clip_ratio_low: 0.2
+  clip_ratio_high: 0.28
+  ppo_epochs: 1
+  minibatch_size: 8
+  kl_coef: 0.0
+  entropy_coef: 0.0
+  mask_truncated: true
+  dynamic_sampling: true
+
+output_dir: runs/grpo

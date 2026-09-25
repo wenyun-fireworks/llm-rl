@@ -1,0 +1,60 @@
+# Shared settings. The per-algorithm configs extend this so that a REINFORCE, GRPO
+# and PPO run differ only in their algorithm block -- same model, same data, same
+# rollout budget, same optimizer. That is what makes the comparison matched.
+
+model:
+  name: Qwen/Qwen3.5-4B-Base
+  # fp32 master weights, bf16 compute. Not optional: AdamW stores its state in the
+  # parameter dtype, and a 1e-6 update to a ~0.02 weight is below bf16 resolution,
+  # so with dtype=bfloat16 only ~2% of weights move and training is a near no-op.
+  dtype: float32
+  autocast_dtype: bfloat16
+  gradient_checkpointing: true
+  freeze_vision: true
+  freeze_mtp: true
+  value_head: false
+  logprob_chunk_tokens: 512
+
+data:
+  train_dataset: BytedTsinghua-SIA/DAPO-Math-17k
+  train_split: train
+  max_prompt_tokens: 1024
+  deduplicate: true      # the published set is pre-expanded 1.79M rows / ~17.4k problems
+  exclude_cjk: false
+  shuffle_seed: 0
+
+rollout:
+  group_size: 8
+  prompts_per_step: 32
+  max_new_tokens: 8192   # 4B truncates on 60-74% of AIME rollouts at 6k
+  temperature: 1.0
+  top_p: 1.0
+  gpu_memory_utilization: 0.45
+  server_url: http://127.0.0.1:8001
+
+reward:
+  correct: 1.0
+  incorrect: 0.0
+  format_bonus: 0.0
+  use_math_verify: true
+
+optim:
+  lr: 1.0e-6
+  betas: [0.9, 0.999]
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  warmup_steps: 10
+  scheduler: constant
+
+eval:
+  every_steps: 50
+  avg_at_k: 8
+  temperature: 0.6
+  top_p: 0.95
+  max_new_tokens: 8192
+
+total_steps: 500
+seed: 0
+save_every_steps: 100
+log_every_steps: 1
+output_dir: runs/base

@@ -1,0 +1,61 @@
+defaults: dapo.yaml
+
+# On-policy distillation. Inherits the DAPO config so model, data, rollout budget
+# and context length match the RL runs and the comparison is controlled.
+#
+# This is NOT RL. There is no group baseline and the correctness reward is only
+# logged, not optimized (unless teacher.reward_mix > 0). Supervision is the
+# teacher's log-probability of every token the student produced, which is dense --
+# one signal per token rather than one per response.
+#
+# Hard ceiling: the student cannot exceed the teacher. Measured before starting:
+#   teacher Qwen3.5-122B-A10B-FP8  AIME 2024 avg@8 = 80.4%
+#   student (our DAPO 9B)         AIME 2024 avg@32 = 55.0%
+# A 25-point gap, so there is real headroom. The 35B-A3B alternative measured only
+# 40.4% and would have made the student worse.
+
+teacher:
+  url: http://127.0.0.1:8271
+  # MUST share the student's tokenizer. Every Qwen3.5 checkpoint uses the same
+  # 248,320-token vocab, so any of them can teach any other. A Llama or DeepSeek
+  # teacher would break per-token alignment, which is the whole premise.
+  model: Qwen/Qwen3.5-122B-A10B-FP8
+  # Small on purpose: each scoring request makes the teacher materialize
+  # (tokens x 248320) fp32 logits, so concurrency is what OOMs it.
+  batch_size: 4
+  advantage_clip: 10.0
+  reward_mix: 0.0        # 0 = pure distillation
+
+algo:
+  name: distill
+  advantage: grpo        # only consulted when reward_mix > 0
+  normalize_advantage_std: false
+  loss_normalization: token
+  # The advantage is per-token and already bounded by advantage_clip, so the
+  # clipped ratio is here only to keep the later minibatches of a batch honest.
+  clip_ratio_low: 0.2
+  clip_ratio_high: 0.28
+  clip_ratio_c: null
+  ppo_epochs: 1
+  minibatch_size: 8
+  micro_batch_size: 4
+  kl_coef: 0.0
+  entropy_coef: 0.0
+  # Irrelevant here: a truncated rollout still has thousands of teacher-scorable
+  # tokens, and there is no terminal reward whose validity depends on finishing.
+  mask_truncated: false
+  # No group baseline means degenerate groups are not degenerate -- every token
+  # still carries its own teacher signal.
+  dynamic_sampling: false
+  gen_batch_prompts: 0
+
+# Dense supervision is far more sample-efficient than outcome-supervised RL, so a
+# higher learning rate is usually appropriate. Kept at the RL value for the first
+# run so that any difference is attributable to the objective, not the step size.
+optim:
+  lr: 1.0e-6
+  weight_decay: 0.1
+  warmup_steps: 20
+  scheduler: constant
+
+output_dir: runs/distill

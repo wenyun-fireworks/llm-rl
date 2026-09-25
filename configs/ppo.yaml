@@ -1,0 +1,25 @@
+defaults: base.yaml
+
+model:
+  value_head: true   # required: PPO is the only algorithm here with a critic
+
+algo:
+  name: ppo
+  advantage: gae
+  loss_normalization: token
+  clip_ratio_low: 0.2
+  clip_ratio_high: 0.2
+  ppo_epochs: 2
+  minibatch_size: 8
+  value_coef: 0.5
+  gamma: 1.0
+  gae_lambda: 1.0
+  # Without this the advantage scale is whatever the critic's current error
+  # happens to be, and early training is dominated by critic noise.
+  whiten_advantages: true
+  kl_coef: 0.0
+  entropy_coef: 0.0
+  mask_truncated: true
+  dynamic_sampling: false
+
+output_dir: runs/ppo

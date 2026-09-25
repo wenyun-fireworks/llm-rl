@@ -1,0 +1,53 @@
+[project]
+name = "llm-rl"
+version = "0.1.0"
+description = "REINFORCE / GRPO / PPO implemented from scratch over a shared rollout stack, trained on Qwen3.5-0.8B-Base for AIME"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch==2.13.0",
+    "vllm==0.28.0",
+    "transformers==5.16.1",
+    "datasets>=4.0",
+    "accelerate>=1.0",
+    "math-verify==0.9.0",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "tqdm>=4.66",
+    "matplotlib>=3.11.1",
+    "bitsandbytes>=0.50.2",
+]
+
+[project.optional-dependencies]
+# Gated DeltaNet fused kernels. transformers falls back to a pure-PyTorch path
+# without this, so it is a speed dependency only, never a correctness one.
+fla = ["flash-linear-attention>=0.4"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-xdist>=3.5",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+# vllm and torch must resolve together; never let uv pick a different torch.
+override-dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_rl"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "gpu: requires a CUDA device",
+    "slow: takes more than a few seconds",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

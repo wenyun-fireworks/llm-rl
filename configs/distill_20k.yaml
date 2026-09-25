@@ -1,0 +1,64 @@
+defaults: distill.yaml
+
+# On-policy distillation at a 20k student budget, with the differentiable top-k
+# reverse KL. This is the configuration the earlier failures point to.
+#
+# What we learned from seven collapsed variants, all of which hit the length cap by
+# step 20 with format rate near zero:
+#
+#   The teacher naturally writes 10,683 tokens. At token 2,000 the student sits at
+#   a point the teacher considers one fifth of the way through, and the teacher's
+#   honest per-token opinion there is "keep reasoning". There are ~6,000 interior
+#   positions saying that and one terminal position saying otherwise, so the
+#   student is pushed to write past any cap below the teacher's natural length.
+#
+# Nothing about the objective fixes that -- reward_mix (one scalar spread over 6,000
+# tokens) loses to the dense signal by three orders of magnitude, and the
+# entropy-preserving top-k form collapsed identically. The mismatch itself is the
+# problem, so the budget has to exceed the teacher's natural length.
+#
+# Measured: micro_batch 1 at 20480 context peaks at 89.6 GiB allocated, leaving
+# 48.7 GiB for the engine plus slack. Fixed-width padding is essential -- ragged
+# shapes fragmented the allocator badly enough to OOM at 142 GiB despite the 90 GiB
+# allocated peak, and expandable_segments cannot be used because it breaks IPC.
+
+model:
+  # Constant shapes every step. Not an optimization; without it this OOMs.
+  pad_to_width: 20480
+  logprob_chunk_tokens: 256
+
+teacher:
+  # Differentiable KL over the teacher's top-20, renormalized on that support.
+  # Keeps the -H(pi_s) term the score-function form drops.
+  objective: topk
+  topk: 20
+  reward_mix: 0.0
+
+rollout:
+  # Above the teacher's 10,683-token mean, which is the whole point.
+  max_new_tokens: 19500
+  prompts_per_step: 4
+  group_size: 8
+  # Low: the trainer needs ~140 GiB once fragmentation slack is included. 33 GiB
+  # holds KV for ~50 concurrent 20k sequences, and we only ever need 32.
+  gpu_memory_utilization: 0.18
+
+reward:
+  overlong_max: 0        # logged accuracy only; nothing is optimized from reward
+
+algo:
+  minibatch_size: 8
+  micro_batch_size: 1    # 20480 tokens per forward is already the memory ceiling
+
+optim:
+  # Gradient norms ran 6-8 against max_grad_norm 1.0, so the effective learning
+  # rate was about a seventh of nominal. Let the real gradient through.
+  max_grad_norm: 8.0
+
+eval:
+  max_new_tokens: 19500
+  avg_at_k: 4
+  every_steps: 10
+
+total_steps: 200
+output_dir: runs/distill_20k

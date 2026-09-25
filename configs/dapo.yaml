@@ -1,0 +1,97 @@
+defaults: base.yaml
+
+# DAPO (Decoupled Clip and Dynamic sAmpling Policy Optimization), arXiv 2503.14476.
+#
+# The paper reached 50% on AIME 2024 with Qwen2.5-32B-Base on 128 H800s: 512 prompts
+# x 16 responses, 3x oversampled, 20480-token responses, ~5000 steps. This config
+# keeps the algorithm intact but scales the batch and context to one B200, which is
+# roughly 1/1000 of that compute. Do not expect 50%.
+#
+# Four techniques, all enabled here:
+#   1. clip-higher            clip_ratio_low/high 0.2 / 0.28
+#   2. dynamic sampling       gen_batch_prompts > prompts_per_step, with refill
+#   3. token-level loss       loss_normalization: token
+#   4. overlong reward shaping reward.overlong_max / overlong_cache
+# Plus dual-clip (clip_ratio_c) from verl's reference implementation.
+
+model:
+  name: Qwen/Qwen3.5-9B-Base
+  dtype: float32          # fp32 masters; bf16 would round away a 1e-6 update
+  autocast_dtype: bfloat16
+  gradient_checkpointing: true
+  value_head: false
+  logprob_chunk_tokens: 512
+
+data:
+  train_dataset: BytedTsinghua-SIA/DAPO-Math-17k
+  deduplicate: true
+
+rollout:
+  prompts_per_step: 16     # DAPO: 512
+  group_size: 8            # DAPO: 16
+  max_new_tokens: 6144     # DAPO: 20480; shortened to buy steps within a 12h budget
+  temperature: 1.0
+  top_p: 1.0
+  # Measured on the real loop, not a synthetic probe: the trainer needs ~110 GiB of
+  # 178 GiB at minibatch 4 (fp32 params 33 + grads 33 + 8-bit Adam 17, plus ~13 GiB
+  # of batch-level fp32 tensors for old logprobs / advantages / masks). That leaves
+  # the engine ~46 GiB, most of it KV cache: 9B has 8 full-attention layers at
+  # 32 KB/token, so ~46 GiB holds roughly 120 concurrent 8k sequences.
+  gpu_memory_utilization: 0.28
+  server_url: http://127.0.0.1:8100
+
+reward:
+  correct: 1.0
+  incorrect: 0.0
+  use_math_verify: true
+  # 4:1 max:cache ratio, matching DAPO's 20480/4096.
+  overlong_max: 6144
+  overlong_cache: 1536
+  overlong_penalty: 1.0
+
+algo:
+  name: grpo
+  advantage: grpo
+  normalize_advantage_std: false   # Dr.GRPO / DAPO
+  loss_normalization: token
+  clip_ratio_low: 0.2
+  clip_ratio_high: 0.28            # clip-higher
+  clip_ratio_c: 10.0               # dual-clip
+  ppo_epochs: 1
+  # 4, not 8: activations scale with minibatch x context, and at 8192 context a
+  # minibatch of 8 pushed the trainer to 130 GiB and OOMed against the engine.
+  minibatch_size: 4
+  kl_coef: 0.0                     # DAPO removes the KL term entirely
+  entropy_coef: 0.0
+  # Overlong rollouts are penalized through the reward, not masked out of the loss.
+  # Turning both on would punish length twice and discard the evidence as well.
+  mask_truncated: false
+  dynamic_sampling: true
+  # Resampling is OFF by default (0 = drop degenerate groups without refilling).
+  # DAPO's own ablation reports 50% AIME "w/o Dynamic Sampling", so the 3x
+  # oversampling is not what produces the headline number -- but it does triple
+  # generation cost, which is the binding constraint in a 12h budget. The
+  # dapo_dyn variant turns it back on so we can measure what it buys.
+  gen_batch_prompts: 0
+  max_gen_batches: 5
+
+optim:
+  # 8-bit Adam moments: 17 GiB instead of 68 GiB for 9B, which is what makes the
+  # trainer and the engine co-tenant on one GPU. Verified to still apply 1e-6
+  # updates to 100% of weights (scripts/_check_9b_fit.py).
+  optimizer: adamw8bit
+  lr: 1.0e-6
+  weight_decay: 0.1
+  max_grad_norm: 1.0
+  warmup_steps: 20
+  scheduler: constant
+
+eval:
+  every_steps: 20
+  avg_at_k: 8            # cheap during training; avg@32 for final numbers
+  temperature: 1.0       # DAPO's eval protocol
+  top_p: 0.7
+  max_new_tokens: 6144
+
+total_steps: 500
+output_dir: runs/dapo

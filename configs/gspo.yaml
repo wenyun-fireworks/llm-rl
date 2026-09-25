@@ -1,0 +1,42 @@
+defaults: dapo.yaml
+
+# GSPO (arXiv 2507.18071). Inherits the DAPO config so that everything except the
+# policy objective is held fixed -- same model, data, rollout budget, reward
+# shaping and optimizer. The only differences are the ones the algorithm requires.
+
+algo:
+  name: gspo
+  advantage: grpo
+  # GSPO's objective uses the std-normalized group advantage (paper eq. 4 and 9).
+  # Our DAPO runs used the Dr.GRPO variant without std, so this is a real change.
+  normalize_advantage_std: true
+
+  # Three orders of magnitude tighter than GRPO's 0.2/0.28. This is not a typo:
+  # s_i is a geometric mean over thousands of token ratios, so it lives in a very
+  # narrow band around 1. algos/gspo.py::validate rejects GRPO-sized values.
+  clip_ratio_low: 3.0e-4
+  clip_ratio_high: 4.0e-4
+  clip_ratio_c: null        # dual-clip is a token-level patch; not applicable
+
+  # loss_normalization is inert for GSPO: the objective is already one term per
+  # sequence, so there is no token-vs-sequence choice to make.
+  loss_normalization: token
+
+  ppo_epochs: 1
+  # Deliberately large. With eps ~3e-4, every optimizer step moves the sequence
+  # ratio enough to matter, so 32 sequential updates per rollout batch would leave
+  # almost every sequence clipped (zero gradient) after the first few. Fewer,
+  # better-conditioned updates per batch instead.
+  minibatch_size: 32
+  # ...but 32 sequences x 6144 tokens of activations will not fit next to the
+  # engine, so the forward/backward runs 4 at a time and gradients accumulate.
+  # Verified exactly equivalent to one big backward in tests/test_grad_accum.py.
+  micro_batch_size: 4
+
+  kl_coef: 0.0
+  entropy_coef: 0.0
+  mask_truncated: false
+  dynamic_sampling: true
+  gen_batch_prompts: 0
+
+output_dir: runs/gspo
