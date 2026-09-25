@@ -8,7 +8,8 @@ weight sync and training loop are all here.
 
 **Start with [TUTORIAL.md](TUTORIAL.md)** -- it explains the algorithms, the
 tradeoffs between them, and the five subtle failure modes that this code exists to
-avoid.
+avoid. **Measured results** from the builds and runs are in
+[FINDINGS.md](FINDINGS.md).
 
 ## What it does
 
